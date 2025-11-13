@@ -34,13 +34,13 @@ public static class ToonSerializer
     {
         if (IsPrimitiveValue(value))
         {
-            sb.Append(SerializePrimitiveValue(value));
+            SerializePrimitiveValue(value, sb);
             return;
         }
 
         if (IsCollection(value!))
         {
-            sb.Append(SerializeCollection(value!));
+            SerializeCollection(value!, sb);
             return;
         }
     }
@@ -85,54 +85,61 @@ public static class ToonSerializer
                || value is decimal; // High-precision decimal
     }
 
-    private static string SerializePrimitiveValue(object? value)
+    private static void SerializePrimitiveValue(object? value, StringBuilder sb)
     {
         if (value is null)
         {
-            return ToonConstants.NullLiteral;
+            sb.Append(ToonConstants.NullLiteral);
+            return;
         }
 
         if (value is bool boolValue)
         {
-            return boolValue ? ToonConstants.TrueLiteral : ToonConstants.FalseLiteral;
+            sb.Append(boolValue ? ToonConstants.TrueLiteral : ToonConstants.FalseLiteral);
+            return;
         }
 
         if (IsNumeric(value))
         {
-            return SerializeNumericValue(value);
+            SerializeNumericValue(value, sb);
+            return;
         }
 
         if (value is string strValue)
         {
             var canBeUnquoted = CanBeUnquotedString(strValue, documentDelimiter: ToonConstants.DocumentDelimiter);
-            return SerializeString(strValue, includeQuotes: !canBeUnquoted);
+            SerializeString(strValue, includeQuotes: !canBeUnquoted, sb);
+            return;
         }
 
         throw new InvalidOperationException($"Unsupported primitive type: {value.GetType().FullName}");
     }
 
-    private static string SerializeNumericValue(object obj)
+    private static void SerializeNumericValue(object obj, StringBuilder sb)
     {
         if (obj is float f && float.IsInfinity(f))
         {
-            return ToonConstants.NullLiteral;
+            sb.Append(ToonConstants.NullLiteral);
+            return;
         }
 
         if (obj is double d && double.IsInfinity(d))
         {
-            return ToonConstants.NullLiteral;
+            sb.Append(ToonConstants.NullLiteral);
+            return;
         }
 
         if (obj is IFormattable formattable)
         {
             // The 'null' in the first argument means use the default format string
-            return formattable.ToString(null, CultureInfo.InvariantCulture);
+            sb.Append(formattable.ToString(null, CultureInfo.InvariantCulture));
+            return;
         }
 
-        return obj.ToString() ?? string.Empty;
+        sb.Append(obj.ToString() ?? string.Empty);
     }
 
-    private static string SerializeString(string str, bool includeQuotes)
+    private static void SerializeString(string str, bool includeQuotes, StringBuilder sb)
     {
         var escapedString = str
             .Replace("\\", "\\\\")
@@ -141,7 +148,16 @@ public static class ToonSerializer
             .Replace("\r", "\\r")
             .Replace("\t", "\\t");
 
-        return includeQuotes ? $"\"{escapedString}\"" : escapedString;
+        if (includeQuotes)
+        {
+            sb.Append('"');
+            sb.Append(escapedString);
+            sb.Append('"');
+        }
+        else
+        {
+            sb.Append(escapedString);
+        }
     }
 
     private static bool CanBeUnquotedString(string str, string documentDelimiter, string? activeDelimiter = null)
@@ -205,7 +221,7 @@ public static class ToonSerializer
         return true;
     }
 
-    private static string SerializeCollection(object value)
+    private static void SerializeCollection(object value, StringBuilder sb)
     {
         var collection = (IEnumerable)value;
         int itemCount = 0;
@@ -217,12 +233,14 @@ public static class ToonSerializer
 
         if (itemCount == 0)
         {
-            return SerializeArrayHeader(DefaultItemsKey, 0);
+            SerializeArrayHeader(DefaultItemsKey, 0, sb);
+            return;
         }
 
         if (IsCollectionOfPrimitives(collection))
         {
-            return SerializeCollectionOfPrimitives(collection);
+            SerializeCollectionOfPrimitives(collection, sb);
+            return;
         }
 
         if (IsCollectionOfCollections(collection))
@@ -240,18 +258,18 @@ public static class ToonSerializer
 
             if (allArraysOfPrimitives)
             {
-                var sb = new StringBuilder();
-                sb.AppendLine(SerializeArrayHeader(DefaultItemsKey, itemCount));
+                SerializeArrayHeader(DefaultItemsKey, itemCount, sb);
+                sb.AppendLine();
 
                 foreach (var item in collection)
                 {
                     var innerCollection = (IEnumerable)item;
                     sb.Append(GetDefaultIndentation());
                     sb.Append("- ");
-                    sb.Append(SerializeCollectionOfPrimitives(innerCollection, string.Empty));
+                    SerializeCollectionOfPrimitives(innerCollection, sb, string.Empty);
                     sb.AppendLine();
                 }
-                return sb.ToString();
+                return;
             }
         }
 
@@ -259,8 +277,8 @@ public static class ToonSerializer
         {
             if (TryGetObjectProperties(collection, out var propertyList))
             {
-                 var sb = new StringBuilder();
-                sb.AppendLine(SerializeArrayHeader(DefaultItemsKey, itemCount, propertyList));
+                SerializeArrayHeader(DefaultItemsKey, itemCount, sb, propertyList);
+                sb.AppendLine();
 
                 foreach (var item in collection)
                 {
@@ -269,7 +287,7 @@ public static class ToonSerializer
                     //sb.Append(SerializeObject(innerCollection));
                     sb.AppendLine();
                 }
-                return sb.ToString();
+                return;
             }
             else
             {
@@ -294,7 +312,7 @@ public static class ToonSerializer
         return true;
     }
 
-    private static string SerializeCollectionOfPrimitives(IEnumerable collection, string key = "items")
+    private static void SerializeCollectionOfPrimitives(IEnumerable collection, StringBuilder sb, string key = "items")
     {
         var itemCount = 0;
         foreach (var item in collection)
@@ -302,21 +320,19 @@ public static class ToonSerializer
             itemCount++;
         }
 
-        var sb = new StringBuilder();
-        sb.Append(SerializeArrayHeader(key, itemCount));
+        SerializeArrayHeader(key, itemCount, sb);
         sb.Append(SingleSpaceLiteral);
 
         var iterator = 0;
         foreach (var item in collection)
         {
             iterator++;
-            sb.Append(SerializePrimitiveValue(item));
+            SerializePrimitiveValue(item, sb);
             if (iterator < itemCount)
             {
                 sb.Append(ToonConstants.DocumentDelimiter);
             }
         }
-        return sb.ToString();
     }
 
     private static bool IsCollectionOfCollections(IEnumerable collection)
@@ -381,10 +397,10 @@ public static class ToonSerializer
         return true;
     }
 
-    private static string SerializeArrayHeader(string key, int length, string? propertyList = null)
+    private static void SerializeArrayHeader(string key, int length, StringBuilder sb, string? propertyList = null)
     {
         var propertiesHeader = string.IsNullOrWhiteSpace(propertyList) ? string.Empty : $"{propertyList}";
-        return $"{key ?? string.Empty}[{length}]{propertiesHeader}:";
+        sb.Append($"{key ?? string.Empty}[{length}]{propertiesHeader}:");
     }
 
     private static string GetDefaultIndentation(int level = 1)
