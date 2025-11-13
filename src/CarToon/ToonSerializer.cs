@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -10,6 +11,8 @@ namespace CarToon;
 /// </summary>
 public static class ToonSerializer
 {
+    private const string SingleSpaceLiteral = " ";
+
     /// <summary>
     /// Serializes the given object into Toon format.
     /// </summary>
@@ -26,46 +29,36 @@ public static class ToonSerializer
 
     private static void SerializeValue(object? value, StringBuilder sb)
     {
-        if (value is null)
+        if (IsPrimitiveValue(value))
         {
-            sb.Append(ToonConstants.NullLiteral);
+            sb.Append(SerializePrimitiveValue(value));
             return;
         }
 
-        if(IsPrimitiveValue(value))
+        if (IsCollection(value!))
         {
-            SerializePrimitiveValue(value, sb);
-            return;
-        }
-    }
-
-    private static void SerializePrimitiveValue(object value, StringBuilder sb)
-    {
-        if (value is bool boolValue)
-        {
-            sb.Append(boolValue ? ToonConstants.TrueLiteral : ToonConstants.FalseLiteral);
-            return;
-        }
-
-        if (IsNumeric(value))
-        {
-            sb.Append(SerializeNumericValue(value));
-            return;
-        }
-
-        if (value is string strValue)
-        {
-            var canBeUnquoted = CanBeUnquotedString(strValue, documentDelimiter: ToonConstants.DocumentDelimiter);
-            sb.Append(SerializeString(strValue, includeQuotes: !canBeUnquoted));
+            sb.Append(SerializeCollection(value!));
             return;
         }
     }
 
-    private static bool IsPrimitiveValue(object value)
+    private static bool IsPrimitiveValue(object? value)
     {
-        return value is bool ||
+        // TODO: what about Date objects?
+        return value is null ||
+               value is bool ||
                IsNumeric(value) ||
                value is string;
+    }
+
+    private static bool IsCollection(object value)
+    {
+        var type = value.GetType();
+
+        // Check if it implements IEnumerable but not IDictionary or string
+        return typeof(IEnumerable).IsAssignableFrom(type) &&
+               !typeof(IDictionary).IsAssignableFrom(type) &&
+               !(value is string);
     }
 
     private static bool IsNumeric(object value)
@@ -84,14 +77,40 @@ public static class ToonSerializer
                || value is decimal; // High-precision decimal
     }
 
-    private static string SerializeNumericValue(object obj)
+    private static string SerializePrimitiveValue(object? value)
     {
-        if(obj is float f && float.IsInfinity(f))
+        if(value is null)
         {
             return ToonConstants.NullLiteral;
         }
 
-        if(obj is double d && double.IsInfinity(d))
+        if (value is bool boolValue)
+        {
+            return boolValue ? ToonConstants.TrueLiteral : ToonConstants.FalseLiteral;
+        }
+
+        if (IsNumeric(value))
+        {
+            return SerializeNumericValue(value);
+        }
+
+        if (value is string strValue)
+        {
+            var canBeUnquoted = CanBeUnquotedString(strValue, documentDelimiter: ToonConstants.DocumentDelimiter);
+            return SerializeString(strValue, includeQuotes: !canBeUnquoted);
+        }
+
+        throw new InvalidOperationException($"Unsupported primitive type: {value.GetType().FullName}");
+    }
+
+    private static string SerializeNumericValue(object obj)
+    {
+        if (obj is float f && float.IsInfinity(f))
+        {
+            return ToonConstants.NullLiteral;
+        }
+
+        if (obj is double d && double.IsInfinity(d))
         {
             return ToonConstants.NullLiteral;
         }
@@ -101,7 +120,7 @@ public static class ToonSerializer
             // The 'null' in the first argument means use the default format string
             return formattable.ToString(null, CultureInfo.InvariantCulture);
         }
-        
+
         return obj.ToString() ?? string.Empty;
     }
 
@@ -125,13 +144,13 @@ public static class ToonSerializer
         }
 
         // Check if string has leading or trailing whitespace
-        if(str.Trim().Length != str.Length)
+        if (str.Trim().Length != str.Length)
         {
             return false;
         }
 
         // Check if string matches reserved literals
-        if(str.Equals(ToonConstants.NullLiteral, StringComparison.Ordinal) ||
+        if (str.Equals(ToonConstants.NullLiteral, StringComparison.Ordinal) ||
            str.Equals(ToonConstants.TrueLiteral, StringComparison.Ordinal) ||
            str.Equals(ToonConstants.FalseLiteral, StringComparison.Ordinal))
         {
@@ -174,7 +193,56 @@ public static class ToonSerializer
         {
             return false;
         }
-        
+
         return true;
+    }
+
+    private static string SerializeCollection(object value)
+    {
+        var collection = (IEnumerable)value;
+
+        object? firstElement = null;
+        int itemCount = 0;
+
+        foreach (var item in collection)
+        {
+            if (itemCount == 0)
+            {
+                firstElement = item;
+            }
+            itemCount++;
+        }
+
+        if (itemCount == 0)
+        {
+            return SerializeArrayHeader(0);
+        }
+
+        var sb = new StringBuilder();
+        bool isCollectionOfPrimitives = firstElement != null && IsPrimitiveValue(firstElement);
+        if (isCollectionOfPrimitives)
+        {
+            sb.Append(SerializeArrayHeader(itemCount));
+            sb.Append(SingleSpaceLiteral);
+
+            var iterator = 0;
+            foreach(var item in collection)
+            {
+                iterator++;
+                sb.Append(SerializePrimitiveValue(item));
+                if(iterator < itemCount)
+                {
+                    sb.Append(ToonConstants.DocumentDelimiter);
+                }
+            }
+            return sb.ToString();
+        }
+
+        throw new NotImplementedException("Serialization of non-primitive collections is not implemented yet.");
+    }
+
+    private static string SerializeArrayHeader(int length)
+    {
+        return $"items[{length}]:";
     }
 }
