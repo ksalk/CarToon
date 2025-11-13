@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -12,6 +14,7 @@ namespace CarToon;
 public static class ToonSerializer
 {
     private const string SingleSpaceLiteral = " ";
+    private const string DefaultItemsKey = "items";
 
     /// <summary>
     /// Serializes the given object into Toon format.
@@ -51,8 +54,13 @@ public static class ToonSerializer
                value is string;
     }
 
-    private static bool IsCollection(object value)
+    private static bool IsCollection(object? value)
     {
+        if (value is null)
+        {
+            return false;
+        }
+
         var type = value.GetType();
 
         // Check if it implements IEnumerable but not IDictionary or string
@@ -79,7 +87,7 @@ public static class ToonSerializer
 
     private static string SerializePrimitiveValue(object? value)
     {
-        if(value is null)
+        if (value is null)
         {
             return ToonConstants.NullLiteral;
         }
@@ -200,49 +208,187 @@ public static class ToonSerializer
     private static string SerializeCollection(object value)
     {
         var collection = (IEnumerable)value;
-
-        object? firstElement = null;
         int itemCount = 0;
 
         foreach (var item in collection)
         {
-            if (itemCount == 0)
-            {
-                firstElement = item;
-            }
             itemCount++;
         }
 
         if (itemCount == 0)
         {
-            return SerializeArrayHeader(0);
+            return SerializeArrayHeader(DefaultItemsKey, 0);
         }
 
-        var sb = new StringBuilder();
-        bool isCollectionOfPrimitives = firstElement != null && IsPrimitiveValue(firstElement);
-        if (isCollectionOfPrimitives)
+        if (IsCollectionOfPrimitives(collection))
         {
-            sb.Append(SerializeArrayHeader(itemCount));
-            sb.Append(SingleSpaceLiteral);
+            return SerializeCollectionOfPrimitives(collection);
+        }
 
-            var iterator = 0;
-            foreach(var item in collection)
+        if (IsCollectionOfCollections(collection))
+        {
+            var allArraysOfPrimitives = true;
+            foreach (var item in collection)
             {
-                iterator++;
-                sb.Append(SerializePrimitiveValue(item));
-                if(iterator < itemCount)
+                var innerCollection = (IEnumerable)item;
+                if (!IsCollectionOfPrimitives(innerCollection))
                 {
-                    sb.Append(ToonConstants.DocumentDelimiter);
+                    allArraysOfPrimitives = false;
+                    break;
                 }
             }
-            return sb.ToString();
+
+            if (allArraysOfPrimitives)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine(SerializeArrayHeader(DefaultItemsKey, itemCount));
+
+                foreach (var item in collection)
+                {
+                    var innerCollection = (IEnumerable)item;
+                    sb.Append(GetDefaultIndentation());
+                    sb.Append("- ");
+                    sb.Append(SerializeCollectionOfPrimitives(innerCollection, string.Empty));
+                    sb.AppendLine();
+                }
+                return sb.ToString();
+            }
+        }
+
+        if (IsCollectionOfObjects(collection))
+        {
+            if (TryGetObjectProperties(collection, out var propertyList))
+            {
+                 var sb = new StringBuilder();
+                sb.AppendLine(SerializeArrayHeader(DefaultItemsKey, itemCount, propertyList));
+
+                foreach (var item in collection)
+                {
+                    var innerCollection = (IEnumerable)item;
+                    sb.Append(GetDefaultIndentation());
+                    //sb.Append(SerializeObject(innerCollection));
+                    sb.AppendLine();
+                }
+                return sb.ToString();
+            }
+            else
+            {
+                throw new InvalidOperationException("Cannot serialize collection: all objects must have the same properties.");
+            }
+            
+           
         }
 
         throw new NotImplementedException("Serialization of non-primitive collections is not implemented yet.");
     }
 
-    private static string SerializeArrayHeader(int length)
+    private static bool IsCollectionOfPrimitives(IEnumerable collection)
     {
-        return $"items[{length}]:";
+        foreach (var item in collection)
+        {
+            if (!IsPrimitiveValue(item))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static string SerializeCollectionOfPrimitives(IEnumerable collection, string key = "items")
+    {
+        var itemCount = 0;
+        foreach (var item in collection)
+        {
+            itemCount++;
+        }
+
+        var sb = new StringBuilder();
+        sb.Append(SerializeArrayHeader(key, itemCount));
+        sb.Append(SingleSpaceLiteral);
+
+        var iterator = 0;
+        foreach (var item in collection)
+        {
+            iterator++;
+            sb.Append(SerializePrimitiveValue(item));
+            if (iterator < itemCount)
+            {
+                sb.Append(ToonConstants.DocumentDelimiter);
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static bool IsCollectionOfCollections(IEnumerable collection)
+    {
+        foreach (var item in collection)
+        {
+            if (!IsCollection(item))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static bool IsCollectionOfObjects(IEnumerable collection)
+    {
+        foreach (var item in collection)
+        {
+            if (item is null || IsPrimitiveValue(item) || IsCollection(item))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static bool TryGetObjectProperties(IEnumerable collection, out string propertyList)
+    {
+        var propertySignature = string.Empty;
+        propertyList = string.Empty;
+        var isFirst = true;
+
+        foreach (var item in collection)
+        {
+            if (item is null)
+            {
+                return false;
+            }
+
+            var type = item.GetType();
+            var properties = type.GetProperties();
+            
+            // Create a signature based on property names and types
+            var currentSignature = string.Join("|", properties
+                .OrderBy(p => p.Name)
+                .Select(p => $"{p.Name}:{p.PropertyType.FullName}"));
+
+            if (isFirst)
+            {
+                propertySignature = currentSignature;
+                propertyList = string.Join(", ", properties
+                    .OrderBy(p => p.Name)
+                    .Select(p => p.Name));
+                isFirst = false;
+            }
+            else if (propertySignature != currentSignature)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string SerializeArrayHeader(string key, int length, string? propertyList = null)
+    {
+        var propertiesHeader = string.IsNullOrWhiteSpace(propertyList) ? string.Empty : $"{propertyList}";
+        return $"{key ?? string.Empty}[{length}]{propertiesHeader}:";
+    }
+
+    private static string GetDefaultIndentation(int level = 1)
+    {
+        return new string(' ', ToonConstants.IndentSize * level);
     }
 }
