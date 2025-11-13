@@ -26,13 +26,22 @@ public static class ToonSerializer
 
     private static void SerializeValue(object? value, StringBuilder sb)
     {
-        // Serialize primitive types
         if (value is null)
         {
             sb.Append(ToonConstants.NullLiteral);
             return;
         }
 
+        // Serialize primitive types
+        if(IsPrimitiveValue(value))
+        {
+            SerializePrimitiveValue(value, sb);
+            return;
+        }
+    }
+
+    private static void SerializePrimitiveValue(object value, StringBuilder sb)
+    {
         if (value is bool boolValue)
         {
             sb.Append(boolValue ? ToonConstants.TrueLiteral : ToonConstants.FalseLiteral);
@@ -53,25 +62,27 @@ public static class ToonSerializer
         }
     }
 
-    private static bool IsNumeric(object obj)
+    private static bool IsPrimitiveValue(object value)
     {
-        if (obj == null)
-        {
-            return false;
-        }
+        return value is bool ||
+               IsNumeric(value) ||
+               value is string;
+    }
 
+    private static bool IsNumeric(object value)
+    {
         // Check if the object is any of the fundamental numeric types
-        return obj is sbyte      // Signed 8-bit integer
-               || obj is byte    // Unsigned 8-bit integer
-               || obj is short   // Signed 16-bit integer
-               || obj is ushort  // Unsigned 16-bit integer
-               || obj is int     // Signed 32-bit integer
-               || obj is uint    // Unsigned 32-bit integer
-               || obj is long    // Signed 64-bit integer
-               || obj is ulong   // Unsigned 64-bit integer
-               || obj is float   // Single-precision floating point (System.Single)
-               || obj is double  // Double-precision floating point (System.Double)
-               || obj is decimal; // High-precision decimal
+        return value is sbyte      // Signed 8-bit integer
+               || value is byte    // Unsigned 8-bit integer
+               || value is short   // Signed 16-bit integer
+               || value is ushort  // Unsigned 16-bit integer
+               || value is int     // Signed 32-bit integer
+               || value is uint    // Unsigned 32-bit integer
+               || value is long    // Signed 64-bit integer
+               || value is ulong   // Unsigned 64-bit integer
+               || value is float   // Single-precision floating point (System.Single)
+               || value is double  // Double-precision floating point (System.Double)
+               || value is decimal; // High-precision decimal
     }
 
     private static string SerializeNumericValue(object obj)
