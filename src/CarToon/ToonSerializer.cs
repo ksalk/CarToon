@@ -13,9 +13,6 @@ namespace CarToon;
 /// </summary>
 public static class ToonSerializer
 {
-    private const string SingleSpaceLiteral = " ";
-    private const string DefaultItemsKey = "items";
-
     /// <summary>
     /// Serializes the given object into Toon format.
     /// </summary>
@@ -233,7 +230,7 @@ public static class ToonSerializer
 
         if (itemCount == 0)
         {
-            SerializeArrayHeader(DefaultItemsKey, 0, sb);
+            SerializeArrayHeader(ToonConstants.DefaultItemsKey, 0, sb);
             return;
         }
 
@@ -258,7 +255,7 @@ public static class ToonSerializer
 
             if (allArraysOfPrimitives)
             {
-                SerializeArrayHeader(DefaultItemsKey, itemCount, sb);
+                SerializeArrayHeader(ToonConstants.DefaultItemsKey, itemCount, sb);
                 sb.AppendLine();
 
                 foreach (var item in collection)
@@ -277,7 +274,7 @@ public static class ToonSerializer
         {
             if (TryGetObjectProperties(collection, out var propertyList))
             {
-                SerializeArrayHeader(DefaultItemsKey, itemCount, sb, propertyList);
+                SerializeArrayHeader(ToonConstants.DefaultItemsKey, itemCount, sb, propertyList);
                 sb.AppendLine();
 
                 foreach (var item in collection)
@@ -321,7 +318,7 @@ public static class ToonSerializer
         }
 
         SerializeArrayHeader(key, itemCount, sb);
-        sb.Append(SingleSpaceLiteral);
+        sb.Append(ToonConstants.SingleSpaceLiteral);
 
         var iterator = 0;
         foreach (var item in collection)
