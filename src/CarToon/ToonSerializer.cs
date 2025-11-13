@@ -32,7 +32,6 @@ public static class ToonSerializer
             return;
         }
 
-        // Serialize primitive types
         if(IsPrimitiveValue(value))
         {
             SerializePrimitiveValue(value, sb);
@@ -87,6 +86,16 @@ public static class ToonSerializer
 
     private static string SerializeNumericValue(object obj)
     {
+        if(obj is float f && float.IsInfinity(f))
+        {
+            return ToonConstants.NullLiteral;
+        }
+
+        if(obj is double d && double.IsInfinity(d))
+        {
+            return ToonConstants.NullLiteral;
+        }
+
         if (obj is IFormattable formattable)
         {
             // The 'null' in the first argument means use the default format string
